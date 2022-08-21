@@ -1,0 +1,17 @@
+{:paths ["src" "resources"]
+ :deps {org.clojure/clojure {:mvn/version "1.11.1"}
+        datalevin/datalevin {:mvn/version "0.6.16"}
+        org.clojure/tools.logging {:mvn/version "1.2.4"}
+        com.wsscode/pathom3 {:mvn/version "2022.07.08-alpha"}
+
+        com.cognitect/transit-clj {:mvn/version "1.0.329"}}
+ :aliases
+ {:build {:deps {io.github.seancorfield/build-clj
+                 {:git/tag "v0.8.2" :git/sha "0ffdb4c0f2cd7ef484458502b926fbe63efe540b"}}
+          :ns-default build}
+  :test {:extra-paths ["test"]
+         :extra-deps {org.slf4j/slf4j-simple {:mvn/version "1.7.30"}
+                      com.fulcrologic/fulcro-rad {:mvn/version "1.2.7"}
+                      org.clojure/test.check {:mvn/version "1.1.1"}
+                      io.github.cognitect-labs/test-runner
+                      {:git/tag "v0.5.0" :git/sha "48c3c67"}}}}}
