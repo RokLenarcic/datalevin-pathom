@@ -2,7 +2,6 @@
   (:require [com.fulcrologic.rad.form :as form]
             [com.fulcrologic.rad.attributes :as attr]
             [com.fulcrologic.rad.ids :refer [new-uuid]]
-            [com.fulcrologic.rad.middleware.save-middleware :as r.s.middleware]
             [com.fulcrologic.rad.type-support.decimal :as math]
             [com.fulcrologic.fulcro.algorithms.tempid :as tempid]
             [clojure.set :as set]
@@ -203,5 +202,5 @@
                 {})
               (log/warn "Datalevin adapter failed to delete " params)))
 
-(def save-middleware (r.s.middleware/wrap-rewrite-values (reify-middleware save-form!)))
+(def save-middleware (reify-middleware save-form!))
 (def delete-middleware (reify-middleware delete-entity!))
