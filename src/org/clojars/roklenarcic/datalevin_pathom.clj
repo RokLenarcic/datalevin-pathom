@@ -31,3 +31,12 @@
   Useful to add o/query-fn o/resolver-input o/resolver-output to attributes before they are used."
   [attributes qk->extra-props]
   (mapv #(if-some [m (qk->extra-props (o/qualified-key %))] (merge % m) %) attributes))
+
+(defn wrap-env
+  "Build a (fn [env] env') that adds connection data to an env. If `base-wrapper` is supplied, then it will be called
+   as part of the evaluation, allowing you to build up a chain of environment middleware."
+  ([connection-map] (wrap-env nil connection-map))
+  ([base-wrapper connection-map]
+   (fn [env]
+     (cond-> (assoc env o/connections connection-map)
+       base-wrapper (base-wrapper)))))

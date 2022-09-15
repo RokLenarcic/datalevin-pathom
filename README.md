@@ -200,23 +200,17 @@ Requires:
 Here's the Pathom 3 setup:
 
 ```
-(def env-wrappers (-> (attr/wrap-env a/attributes) ; adds needed ::attr/key->attribute
-                      (form/wrap-env fm/save-middleware fm/delete-middleware))) ; adds form middlewares
-
 (defn parser []
-  (let [p (-> {o/connections {:my-schema conn}}
-              ;; add dynamic resolver
-              (pci/register (dtlv-p3/automatic-resolvers a/attributes :my-schema))
-              ;; add form resolvers
-              (pci/register (rad.p3/convert-resolvers form/resolvers))
-              ;; optional error handling plugins
-              (p.plugin/register-plugin rad.p3/attribute-error-plugin)
-              (p.plugin/register-plugin rad.p3/rewrite-mutation-exceptions)
-              ;; wrap env
-              env-wrappers
-              p.eql/boundary-interface)]
-    (fn [env eql]
-      (p env {:pathom/eql eql :pathom/lenient-mode? true}))))
+  (rad.p3/new-processor
+    config
+    (-> (form/wrap-env save/middleware delete/middleware)
+        (dtlv-p3/wrap-env datalevin-connections)
+        (attr/wrap-env all-attributes))
+    []
+    [form/resolvers
+     (dtlv-p3/automatic-resolvers all-attributes :my-schema)]))
+
+Of course additional things will be needed, this is just a very basic one.
 
 ```
 
