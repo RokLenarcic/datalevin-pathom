@@ -65,7 +65,7 @@
         :otherwise ident))))
 
 (defn fix-numerics
-  "Using field types double and float can cause anomolies with Datomic because js might send an int when the number has
+  "Using field types double and float can cause anomalies with Datomic because js might send an int when the number has
    no decimal digits."
   [attr v]
   (case (:attr/type attr)
