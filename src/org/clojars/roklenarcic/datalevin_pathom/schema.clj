@@ -28,9 +28,18 @@
    })
 
 (defn attributes-not-in-schema
-  "Returns attributes in current schema, that are not in the supplied schema."
+  "Returns attributes in current schema, that are not in the supplied schema.
+
+  Ignored :db/* attributes and attributes that have been created adhoc im the database."
   [conn schema]
-  (let [current (into #{} (remove #(= "db" (namespace %)) (keys (d/schema conn))))]
+  (let [current (reduce-kv
+                  (fn [s attr-key schema]
+                    (if (or (= "db" (namespace attr-key))
+                            (= [:db/aid] (keys schema)))
+                      s
+                      (conj s attr-key)))
+                  #{}
+                  (d/schema conn))]
     (reduce disj current (keys schema))))
 
 (defn- attribute-schema [attributes]
