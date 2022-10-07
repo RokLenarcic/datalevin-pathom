@@ -32,19 +32,6 @@
   If not specified it will be just the attribute if a scalar type, and [{attr [target/id]}] if :ref type."
   :com.wsscode.pathom3.connect.operation/output)
 
-(defn ->query
-  "Use this function to return your custom query from query-fn.
-  First parameter is the query and second one is a sequence of params.
-
-  xf is a transform that should be run on the output of the query
-
-  e.g. (->query '[:find (pull ?e pattern) . :in $ pattern ?e] [db pattern (input k)] identity)"
-  ([query query-params]
-   (->query query query-params identity))
-  ([query query-params xf]
-   #:org.clojars.roklenarcic.datalevin-pathom
-           {:query query :query-params query-params :xf xf}))
-
 ;; ATTRIBUTES
 
 (def native-id?

@@ -27,11 +27,28 @@
     {}
     attributes))
 
+(defmulti resolve-attr-pull
+  "Generates and runs a query (or something similar) to resolve a tree, headed by the attribute.
+
+  By default, it uses generate-attr-query and datalevin.core/query"
+  (fn [env db attr pattern node-resolver-input]
+    (o/qualified-key attr)))
+
+(defmethod resolve-attr-pull :default
+  [env db attr pattern node-resolver-input]
+  (let [{:org.clojars.roklenarcic.datalevin-pathom/keys [query query-params xf]}
+        (q/generate-attr-query env db attr pattern node-resolver-input)]
+    (logr/debugf "Running query %s with params %s" query (rest query-params))
+    (when query (xf (apply d/q query query-params)))))
+
 (defn main-resolver [attributes schema-name]
   (let [native-id-attrs (into #{} (keep #(when (and (o/identity? %) (o/native-id? %)) (o/qualified-key %)) attributes))
-        ->query (q/query-factory attributes)]
+        id-keys (into #{} (map o/qualified-key (filter o/identity? attributes)))
+        key->attr (zipmap (map o/qualified-key attributes) attributes)
+        resolver-sym (symbol (namespace-for-schema (or schema-name :datalevin)) "datalevin-dyn")]
+    (logr/debugf "Generating Dynamic resolver %s" resolver-sym)
     (pco/resolver
-      (symbol (namespace-for-schema (or schema-name :datalevin)) "datalevin-dyn")
+      resolver-sym
       {::pco/cache? false
        ::pco/dynamic-resolver? true}
       (fn datalevin-resolve-internal
@@ -39,10 +56,16 @@
         (logr/tracef "Input %s Foreign AST: %s" node-resolver-input foreign-ast)
         (let [conn (-> env o/connections schema-name)
               pattern (q/pathom-ast->datalevin-pull native-id-attrs foreign-ast)
-              {:org.clojars.roklenarcic.datalevin-pathom/keys [query query-params xf]} (->query env (d/db conn) pattern node-resolver-input)]
-          (logr/debug "Using query" query)
-          (logr/trace "Query params" (next query-params))
-          (q/datalevin-result->pathom-result native-id-attrs foreign-ast (xf (apply d/q query query-params))))))))
+              _ (logr/trace "Original pattern " pattern)
+              ident-key (some id-keys (keys node-resolver-input))
+              solo-attr-key (first (q/solo-attribute-with-params (-> env ::pcp/node ::pcp/foreign-ast)))
+              pattern (if (and (not ident-key) solo-attr-key (map? (first pattern)))
+                        (val (ffirst pattern)) pattern)
+              _ (logr/trace "Final pattern " pattern)
+              attr (key->attr (or ident-key solo-attr-key))]
+          (cond->> (resolve-attr-pull env (d/db conn) attr pattern node-resolver-input)
+            (and (not ident-key) solo-attr-key) (assoc {} (o/qualified-key attr))
+            :always (q/datalevin-result->pathom-result native-id-attrs foreign-ast)))))))
 
 (defn sub-resolvers
   "Resolvers for entities calculated from attributes. These map identity attributes to
@@ -50,7 +73,7 @@
   are parameter-less sources."
   [main-resolver attributes]
   (for [[attr-name attrs] (entities-map attributes)]
-    (do (logr/debug "Sub resolver" attr-name "->" (map o/qualified-key attrs))
+    (do (logr/debug "Generating sub resolver" attr-name "->" (map o/qualified-key attrs))
         (pco/resolver (symbol (namespace-for-schema attr-name) "datalevin-sub")
                       {::pco/dynamic-name (-> main-resolver pop/-operation-config ::pco/op-name)
                        ::pco/input [attr-name]
@@ -64,9 +87,10 @@
   have no input required."
   [main-resolver attributes]
   (for [attr attributes
-        :when (and (o/query-fn attr) (not (o/identity? attr)))]
-    (pco/resolver (symbol (namespace-for-schema (o/qualified-key attr)) "datalevin-sub")
-                  {::pco/dynamic-name (-> main-resolver pop/-operation-config ::pco/op-name)
-                   ::pco/input (or (o/resolver-input attr) [])
-                   ::pco/output (or (o/resolver-output attr)
-                                    (if-let [t (o/target attr)] [{(o/qualified-key attr) [t]}] [(o/qualified-key attr)]))})))
+        :when (not (or (o/identity? attr) (seq (o/identities attr))))]
+    (do (logr/debug "Generating sub resolver" (o/qualified-key attr))
+        (pco/resolver (symbol (namespace-for-schema (o/qualified-key attr)) "datalevin-sub")
+                      {::pco/dynamic-name (-> main-resolver pop/-operation-config ::pco/op-name)
+                       ::pco/input (or (o/resolver-input attr) [])
+                       ::pco/output (or (o/resolver-output attr)
+                                        (if-let [t (o/target attr)] [{(o/qualified-key attr) [t]}] [(o/qualified-key attr)]))}))))

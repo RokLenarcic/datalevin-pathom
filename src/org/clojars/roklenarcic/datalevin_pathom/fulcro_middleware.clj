@@ -138,7 +138,7 @@
   ;; this is stringified temp ID
   (let [txn (keep
               (fn [[k id :as ident]]
-                (when (tempid/tempid? id)
+                (when (and (tempid/tempid? id) (not (native-ident? env ident)))
                   (if (uuid-ident? env ident)
                     [:db/add (tempid->txid id) k (new-uuid)]
                     (throw (ex-info (format "Don't know how to generate ID for temp ID for attr %s." k)

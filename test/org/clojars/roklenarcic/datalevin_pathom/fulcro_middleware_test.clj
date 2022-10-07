@@ -50,4 +50,15 @@
              (p {} [{[::a/id3 id3] [::a/id3 ::a/name]}])))
       (is (= {`form/delete-entity {}} (p {} [`(form/delete-entity [::a/id3 ~id3])])))
       (is (= {[:org.clojars.roklenarcic.datalevin-pathom.test-attributes/id3 id3] {::a/id3 id3}}
-             (p {} [{[::a/id3 id3] [::a/id3 ::a/name]}]))))))
+             (p {} [{[::a/id3 id3] [::a/id3 ::a/name]}])))))
+  (let [p (parser)]
+    (let [tid (tempid/tempid)
+          r1 (p {} `[(form/save-as-form ~(->delta {::a/id tid ::a/name "Rok X"} ::a/id))])
+          {{:keys [tempids] ::a/keys [id]} `form/save-as-form} r1]
+      (is (= [`form/save-as-form] (keys r1)))
+      (is (= {tid id} tempids))
+      (is (= {[::a/id id] {::a/id id ::a/name "Rok X"}}
+             (p {} [{[::a/id id] [::a/id ::a/name]}])))
+      (is (= {`form/delete-entity {}} (p {} [`(form/delete-entity [::a/id ~id])])))
+      (is (= {[:org.clojars.roklenarcic.datalevin-pathom.test-attributes/id id] {::a/id id}}
+             (p {} [{[::a/id id] [::a/id ::a/name]}]))))))

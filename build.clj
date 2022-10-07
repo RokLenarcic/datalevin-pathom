@@ -4,7 +4,7 @@
             [org.corfield.build :as bb]))
 
 (def lib 'org.clojars.roklenarcic/datalevin-pathom)
-(def version (format "0.1.%s-alpha" (b/git-count-revs nil)))
+(def version (format "0.2.%s-alpha" (b/git-count-revs nil)))
 
 (defn test "Run the tests." [opts]
   (bb/run-tests opts))

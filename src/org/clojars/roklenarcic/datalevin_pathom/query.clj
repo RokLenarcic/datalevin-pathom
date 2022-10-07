@@ -1,6 +1,6 @@
 (ns org.clojars.roklenarcic.datalevin-pathom.query
   "Datalevin queries and other transforms of results."
-  (:require [com.wsscode.pathom3.connect.planner :as pcp]
+  (:require [clojure.tools.logging :as log]
             [edn-query-language.core :as eql]
             [org.clojars.roklenarcic.datalevin-pathom.options :as o]))
 
@@ -13,9 +13,9 @@
   (eql/ast->query
     (eql/transduce-children
       (map (fn [{:keys [key dispatch-key] :as node}]
-             (if (native-id-attrs dispatch-key)
-               (assoc node :dispatch-key :db/id :key (if (eql/ident? key) (assoc key 0 :db/id) :db/id))
-               node)))
+             (cond-> (dissoc node :params)
+               (native-id-attrs dispatch-key)
+               (assoc :dispatch-key :db/id :key (if (eql/ident? key) (assoc key 0 :db/id) :db/id)))))
       pathom-ast)))
 
 (defn- fix-id-keys
@@ -49,7 +49,7 @@
         (fix-id-keys native-id-attrs children result)))))
 ;;;
 
-;; RESOLVERS
+;; PUBLIC
 
 (defn solo-attribute-with-params
   "Returns the [qkw-attr params] of AST node that is the single child of root note, and it is not
@@ -61,54 +61,55 @@
                          (first children))]
       (when (= (:key node) (:dispatch-key node)) [(:key node) (:params node)]))))
 
-(defn wrap-custom-query-fn
-  "Wraps custom query-fn in logic that unwraps join in pattern that was created from
-  foreign AST. The fact that we're using custom query already means that we have only 1 child
-  in AST.
+(defmulti generate-attr-query
+  "Generates a map with all the pieces to run a DataLevin query."
+  (fn [env db attr pattern node-resolver-input]
+    (o/qualified-key attr)))
 
-  It will also modify xf on returned query to add {:kw result} wrap."
-  [query-fn kw]
-  (fn custom-query-wrapper [env db pattern input]
-    (let [result (query-fn env db (if (map? (first pattern)) (val (ffirst pattern)) pattern) input)]
-      (update result
-              :org.clojars.roklenarcic.datalevin-pathom/xf
-              (fn [xf] (comp (fn [result] {kw result}) xf))))))
+(defn ->query
+  "Use this function to return your custom query from query-fn.
+  First parameter is the query and second one is a sequence of params.
 
-(defn custom-query-fn
-  "Returns a custom query-fn based on env and foreign-ast and node-resolver-input."
-  [qkw->custom-query foreign-ast node-resolver-input]
-  (when-let [[kw params] (and (empty? node-resolver-input)
-                              (solo-attribute-with-params foreign-ast))]
-    (qkw->custom-query kw)))
+  xf is a transform that should be run on the output of the query
 
-(defn query-fn-handlers
-  [attributes]
-  ; ; kw -> fn/true/false/nil
-  (let [base-map (zipmap (map o/qualified-key attributes)
-                         (map #(o/query-fn % (when (o/identity? %) (o/native-id? % false))) attributes))]
-    (reduce-kv
-      (fn [m k v]
-        (case v
-          nil m
-          true (assoc-in m [:native k] (fn native-query-fn [_ db pattern input]
-                                         (o/->query '[:find (pull ?e pattern) . :in $ pattern ?e]
-                                                    [db pattern (input k)])))
-          false (assoc-in m [:other k] (fn id-query-fn [_ db pattern input]
-                                         (o/->query [:find '(pull ?e pattern) '. :in '$ 'pattern '?v :where ['?e k '?v]]
-                                                    [db pattern (input k)])))
-          (assoc-in m [:custom k] (wrap-custom-query-fn v k))))
-      {:custom {} :native {} :other {}}
-      base-map)))
+  e.g. (->query '[:find (pull ?e pattern) . :in $ pattern ?e] [db pattern (input k)] identity)"
+  ([query query-params]
+   (->query query query-params identity))
+  ([query query-params xf]
+   #:org.clojars.roklenarcic.datalevin-pathom
+           {:query (vec query) :query-params (vec query-params) :xf xf}))
 
-(defn query-factory
-  "Returns a function that takes node-resolver-input and returns the query and the parameters."
-  [attributes]
-  ; #{:custom, :native, :other} -> kw -> query-fn
-  (let [{:keys [custom other native]} (query-fn-handlers attributes)]
-    ;; prefer custom queries, native id identities, normal identities
-    (fn [env db pattern input]
-      (let [f (or (custom-query-fn custom (-> env ::pcp/node ::pcp/foreign-ast) input)
-                  (some native (keys input))
-                  (some other (keys input))
-                  (throw (ex-info "Couldn't find query for input" {:node (-> env ::pcp/node)})))]
-        (f env db pattern input)))))
+(defn add-to-query
+  "Adds to an existing ->query map:
+   {::query '[:find (pull ?e pattern) . :in $ pattern ?e]
+    ::query-params [db pattern 5]}
+
+    Param map of {'?e 1} would add ?e to :in clause and 5 to query-params.
+    Where conditions are added as is."
+  [query-map param-map & where-conditions]
+  (-> query-map
+      (update :org.clojars.roklenarcic.datalevin-pathom/query-params #(apply conj % (vals param-map)))
+      (update :org.clojars.roklenarcic.datalevin-pathom/query
+              (fn [query]
+                (let [[select-part where-part] (split-with #(not= % :where) query)
+                      where-part (concat where-part where-conditions)]
+                  (vec
+                    (concat select-part
+                            (map symbol (keys param-map))
+                            (if (contains? #{nil :where} (first where-part)) [] [:where])
+                            where-part)))))))
+
+(defmethod generate-attr-query :default
+  [env db attr pattern node-resolver-input]
+  (let [attr-kw (o/qualified-key attr)]
+    (log/trace "Looking to generate query for " (pr-str attr) " " (o/identity? attr))
+    (if (o/identity? attr)
+      (if (o/native-id? attr)
+        (->query '[:find (pull ?e pattern) . :in $ pattern ?e]
+                   [db pattern (get node-resolver-input attr-kw)])
+        (->query [:find '(pull ?e pattern) '. :in '$ 'pattern '?v :where ['?e attr-kw '?v]]
+                   [db pattern (get node-resolver-input attr-kw)]))
+      (if-let [query-fn (o/query-fn attr)]
+        (query-fn env db pattern node-resolver-input)
+        (throw (ex-info (str "Cannot generate query for attr " attr-kw ", it is not an ident.") {}))))))
+
