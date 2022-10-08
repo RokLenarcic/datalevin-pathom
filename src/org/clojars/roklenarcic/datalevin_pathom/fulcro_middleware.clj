@@ -100,9 +100,9 @@
   (for [[ident entity-delta] delta
         [k {:keys [before after]}] entity-delta
         :when (and (schema-value? env schema k) (to-one? env k) (or (some? before) (some? after)))]
-    (if (nil? before)
-      [:db/add (failsafe-id env ident) k (tx-value env k after)]
-      [:db/retract (failsafe-id env ident) k (tx-value env k before)])))
+    (if (nil? after)
+      [:db/retract (failsafe-id env ident) k (tx-value env k before)]
+      [:db/add (failsafe-id env ident) k (tx-value env k after)])))
 
 (defn to-many-txn
   "Save non-identity attributes."
