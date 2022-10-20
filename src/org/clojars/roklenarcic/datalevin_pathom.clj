@@ -2,7 +2,8 @@
   (:require [clojure.tools.logging.readable :as logr]
             [datalevin.core :as d]
             [org.clojars.roklenarcic.datalevin-pathom.options :as o]
-            [org.clojars.roklenarcic.datalevin-pathom.resolvers :as resolvers]))
+            [org.clojars.roklenarcic.datalevin-pathom.resolvers :as resolvers]
+            [org.clojars.roklenarcic.datalevin-pathom.query :as q]))
 
 (defn schema-db
   "Return DB from env for schema name"
@@ -34,9 +35,13 @@
 
 (defn wrap-env
   "Build a (fn [env] env') that adds connection data to an env. If `base-wrapper` is supplied, then it will be called
-   as part of the evaluation, allowing you to build up a chain of environment middleware."
-  ([connection-map] (wrap-env nil connection-map))
-  ([base-wrapper connection-map]
+   as part of the evaluation, allowing you to build up a chain of environment middleware.
+
+  Plugins are maps that specify middleware for various functions. See plugin create functions for specifics"
+  ([connection-map plugins] (wrap-env nil connection-map plugins))
+  ([base-wrapper connection-map plugins]
    (fn [env]
-     (cond-> (assoc env o/connections connection-map)
+     (cond-> (assoc env o/connections connection-map
+                        ::q/query-fn (q/full-query-fn plugins)
+                        ::resolvers/resolve-fn (resolvers/full-resolve-fn plugins))
        base-wrapper (base-wrapper)))))

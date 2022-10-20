@@ -47,6 +47,7 @@
       (if (vector? result)
         (mapv #(fix-id-keys native-id-attrs children %) result)
         (fix-id-keys native-id-attrs children result)))))
+
 ;;;
 
 ;; PUBLIC
@@ -113,3 +114,19 @@
         (query-fn env db pattern node-resolver-input)
         (throw (ex-info (str "Cannot generate query for attr " attr-kw ", it is not an ident.") {}))))))
 
+(defn full-query-fn
+  "Instantiates generate-attr-query + plugins combined fn."
+  [plugins]
+  (reduce
+    (fn [f {:keys [plugin-handler]}]
+      (plugin-handler f))
+    generate-attr-query
+    (filter #(= ::plugin (:plugin-type %)) plugins)))
+
+(defn plugin
+  "Create a plugin that wraps `generate-attr-query`. The 'f' needs to be a function
+  (fn outer [delegate]
+    (fn inner [env db attr pattern node-resolver-input]))"
+  [f]
+  {:plugin-type ::plugin
+   :plugin-handler f})

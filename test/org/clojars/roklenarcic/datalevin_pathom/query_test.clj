@@ -54,3 +54,15 @@
               ::p/query-params [1 2 "Peirce" "male"]
               ::p/xf identity}
              (q/add-to-query q {:?gender "male"} '[?e ::a/gender ?gender]))))))
+
+(defmethod q/generate-attr-query ::query-test
+  [env db attr pattern node-resolver-input]
+  {:x 1})
+
+(deftest plugin-test
+  (testing "plugin modifies query"
+    (let [f (fn [delegate]
+              (fn [env db attr pattern node-resolver-input]
+                (update (delegate env db attr pattern node-resolver-input) :x inc)))
+          x (q/full-query-fn [(q/plugin f)])]
+      (is (= {:x 2} (x nil nil {o/qualified-key ::query-test} nil nil))))))

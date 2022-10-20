@@ -27,17 +27,11 @@
     {}
     attributes))
 
-(defmulti resolve-attr-pull
-  "Generates and runs a query (or something similar) to resolve a tree, headed by the attribute.
-
-  By default, it uses generate-attr-query and datalevin.core/query"
-  (fn [env db attr pattern node-resolver-input]
-    (o/qualified-key attr)))
-
-(defmethod resolve-attr-pull :default
+(defn resolve-attr-pull
   [env db attr pattern node-resolver-input]
-  (let [{:org.clojars.roklenarcic.datalevin-pathom/keys [query query-params xf]}
-        (q/generate-attr-query env db attr pattern node-resolver-input)]
+  (let [query-fn (::q/query-fn env q/generate-attr-query)
+        {:org.clojars.roklenarcic.datalevin-pathom/keys [query query-params xf]}
+        (query-fn env db attr pattern node-resolver-input)]
     (logr/debugf "Running query %s with params %s" query (rest query-params))
     (when query (xf (apply d/q query query-params)))))
 
@@ -62,8 +56,9 @@
               pattern (if (and (not ident-key) solo-attr-key (map? (first pattern)))
                         (val (ffirst pattern)) pattern)
               _ (logr/trace "Final pattern " pattern)
-              attr (key->attr (or ident-key solo-attr-key))]
-          (cond->> (resolve-attr-pull env (d/db conn) attr pattern node-resolver-input)
+              attr (key->attr (or ident-key solo-attr-key))
+              resolve-fn (::resolve-fn env resolve-attr-pull)]
+          (cond->> (resolve-fn env (d/db conn) attr pattern node-resolver-input)
             (and (not ident-key) solo-attr-key) (assoc {} (o/qualified-key attr))
             :always (q/datalevin-result->pathom-result native-id-attrs foreign-ast)))))))
 
@@ -94,3 +89,20 @@
                        ::pco/input (or (o/resolver-input attr) [])
                        ::pco/output (or (o/resolver-output attr)
                                         (if-let [t (o/target attr)] [{(o/qualified-key attr) [t]}] [(o/qualified-key attr)]))}))))
+
+(defn full-resolve-fn
+  "Instantiates full resolver function + plugins"
+  [plugins]
+  (reduce
+    (fn [f {:keys [plugin-handler]}]
+      (plugin-handler f))
+    resolve-attr-pull
+    (filter #(= ::plugin (:plugin-type %)) plugins)))
+
+(defn plugin
+  "Create a plugin that wraps `resolve-attr-pull`. The 'f' needs to be a function
+  (fn outer [delegate]
+    (fn inner [env db attr pattern node-resolver-input]))"
+  [f]
+  {:plugin-type ::plugin
+   :plugin-handler f})
