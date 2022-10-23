@@ -51,11 +51,15 @@
   :com.fulcrologic.rad.attributes/schema)
 
 (def qualified-key
-  "A Keyword. This is automatically added by `defattr` and holds the keyword name of the attribute."
+  "A Keyword. Keyword name of the attribute."
   :com.fulcrologic.rad.attributes/qualified-key)
 
 (def type
-  "A Keyword. This is automatically added by `defattr` and holds the data type name of the attribute."
+  "A Keyword. Holds the data type name of the attribute.
+  :string :enum :boolean :password :int :long :double
+  :float :bigdec :bigint :decimal
+  :instant :keyword :symbol :ref :uuid
+  "
   :com.fulcrologic.rad.attributes/type)
 
 (def identity?
@@ -63,8 +67,7 @@
   :com.fulcrologic.rad.attributes/identity?)
 
 (def identities
-  "
-  A set of qualified keys of attributes that serve as an identity for an entity. It is the list of attributes that
+  "A set of qualified keys of attributes that serve as an identity for an entity. It is the list of attributes that
   when present on entity also have this attribute."
   :com.fulcrologic.rad.attributes/identities)
 

@@ -4,8 +4,8 @@
             [org.clojars.roklenarcic.datalevin-pathom.resolvers :as r]))
 
 (deftest entities-map-test
-  (is (= {::a/id [a/name-attr a/id-attr]
-          ::a/id2 [a/ref-attr a/int-attr a/name-attr a/id2-attr]
+  (is (= {::a/id [a/parent-attr a/name-attr a/id-attr]
+          ::a/id2 [a/parent-attr2 a/ref-attr a/int-attr a/name-attr a/id2-attr]
           ::a/id3 [a/name-attr a/id3-attr]
           ::a/sub-table [a/addr-attr a/sub-table-attr]}
          (r/entities-map a/attributes))))

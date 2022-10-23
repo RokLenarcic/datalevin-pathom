@@ -14,6 +14,17 @@
            (q/pathom-ast->datalevin-pull native-id-attrs (eql/query->ast [{[::a/id 1] [::a/name]}]))))
     (is (= [{[::a/id2 1] [::a/name]}]
            (q/pathom-ast->datalevin-pull native-id-attrs (eql/query->ast [{[::a/id2 1] [::a/name]}])))))
+  (testing "Expands leaf nodes"
+    (is (= [{[::a/id2 1] [::a/name {::a/parent2 [::a/id2]}]}]
+           (-> [{[::a/id2 1] [::a/name ::a/parent2]}]
+               eql/query->ast
+               (q/expand-leaf-refs a/key->attr)
+               eql/ast->query)))
+    (is (= [{[::a/id 1] [::a/name {::a/parent [::a/id]}]}]
+           (-> [{[::a/id 1] [::a/name ::a/parent]}]
+               eql/query->ast
+               (q/expand-leaf-refs a/key->attr)
+               eql/ast->query))))
   (testing "Changes result from db to query keys"
     (is (= {[::a/id 1] {::a/name "HEHE"}}
            (q/datalevin-result->pathom-result native-id-attrs (eql/query->ast [{[::a/id 1] [::a/name]}]) {[:db/id 1] {::a/name "HEHE"}})))

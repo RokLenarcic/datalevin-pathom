@@ -49,7 +49,8 @@
         [env {:keys [::pcr/node-resolver-input ::pcp/foreign-ast]}]
         (logr/tracef "Input %s Foreign AST: %s" node-resolver-input foreign-ast)
         (let [conn (-> env o/connections schema-name)
-              pattern (q/pathom-ast->datalevin-pull native-id-attrs foreign-ast)
+              ast (q/expand-leaf-refs foreign-ast key->attr)
+              pattern (q/pathom-ast->datalevin-pull native-id-attrs ast)
               _ (logr/trace "Original pattern " pattern)
               ident-key (some id-keys (keys node-resolver-input))
               solo-attr-key (first (q/solo-attribute-with-params (-> env ::pcp/node ::pcp/foreign-ast)))
@@ -60,7 +61,7 @@
               resolve-fn (::resolve-fn env resolve-attr-pull)]
           (cond->> (resolve-fn env (d/db conn) attr pattern node-resolver-input)
             (and (not ident-key) solo-attr-key) (assoc {} (o/qualified-key attr))
-            :always (q/datalevin-result->pathom-result native-id-attrs foreign-ast)))))))
+            :always (q/datalevin-result->pathom-result native-id-attrs ast)))))))
 
 (defn sub-resolvers
   "Resolvers for entities calculated from attributes. These map identity attributes to

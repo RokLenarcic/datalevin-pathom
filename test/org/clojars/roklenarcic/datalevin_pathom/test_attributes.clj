@@ -54,7 +54,21 @@
    o/type :string
    o/schema :test})
 
-(def attributes [id-attr id2-attr id3-attr name-attr int-attr ref-attr sub-table-attr addr-attr])
+(def parent-attr
+  {o/qualified-key ::parent
+   o/identities #{::id}
+   o/type :ref
+   o/target ::id
+   o/schema :test})
 
-(def env-base {:com.fulcrologic.rad.attributes/key->attribute
-               (zipmap (map o/qualified-key attributes) attributes)})
+(def parent-attr2
+  {o/qualified-key ::parent2
+   o/identities #{::id2}
+   o/type :ref
+   o/target ::id2
+   o/schema :test})
+
+(def attributes [id-attr id2-attr id3-attr name-attr int-attr ref-attr sub-table-attr addr-attr
+                 parent-attr parent-attr2])
+
+(def key->attr (zipmap (map o/qualified-key attributes) attributes))

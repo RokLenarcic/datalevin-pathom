@@ -6,6 +6,20 @@
 
 ;;; native id handling
 
+(defn expand-leaf-refs
+  "When leaf in query is a ref, we expand the query to include target id, as that is what we
+  realistically return."
+  [pathom-ast key->attr]
+  (eql/transduce-children
+    (map (fn [{:keys [dispatch-key children] :as node}]
+           (let [attr (key->attr dispatch-key)]
+             (cond-> node
+               (and (empty? children) (= (o/type attr) :ref))
+               (assoc :children [{:type :prop, :dispatch-key (o/target attr), :key (o/target attr)}]
+                      :type :join
+                      :query [(o/target attr)])))))
+    pathom-ast))
+
 (defn pathom-ast->datalevin-pull
   "Takes the set of native ID attribute keys and AST and returns a query where :db/id is used in place of the native
   ID attributes."
@@ -29,12 +43,15 @@
         find-native-key #(or (->> ast-nodes (map :dispatch-key) (some native-id-attrs)) %)]
     (reduce-kv
       (fn [m k v]
-        (cond
-          (= :db/id k) (assoc m (find-native-key k) v)
-          (and (eql/ident? k) (= :db/id (first k))) (assoc m (assoc k 0 (find-native-key k)) v)
-          (and (contains? join-key->children k) (vector? v)) (assoc m k (mapv #(fix-id-keys native-id-attrs (join-key->children k) %) v))
-          (and (contains? join-key->children k) (map? v)) (assoc m k (fix-id-keys native-id-attrs (join-key->children k) v))
-          :otherwise (assoc m k v)))
+        (assoc m
+          (cond
+            (= :db/id k) (find-native-key k)
+            (and (eql/ident? k) (= :db/id (first k))) (assoc k 0 (find-native-key k))
+            :else k)
+          (cond
+            (and (contains? join-key->children k) (vector? v)) (mapv #(fix-id-keys native-id-attrs (join-key->children k) %) v)
+            (and (contains? join-key->children k) (map? v)) (fix-id-keys native-id-attrs (join-key->children k) v)
+            :otherwise v)))
       {}
       result)))
 

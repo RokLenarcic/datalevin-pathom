@@ -19,6 +19,10 @@
                               :valueType :db.type/long}
             ::a/ref-attr #:db{:cardinality :db.cardinality/many
                               :valueType :db.type/ref}
+            ::a/parent #:db{:cardinality :db.cardinality/one
+                            :valueType :db.type/ref}
+            ::a/parent2 #:db{:cardinality :db.cardinality/one
+                             :valueType :db.type/ref}
             ::a/sub-table #:db{:cardinality :db.cardinality/one
                                :unique :db.unique/identity
                                :valueType :db.type/long}}
