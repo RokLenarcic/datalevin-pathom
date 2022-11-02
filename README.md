@@ -13,10 +13,14 @@ This library provides:
 - support custom queries for some keys
 - Fulcro form save/delete middleware. Fulcro RAD dependency isn't part of the deps, you'll have to require your own. This is to keep this part of the library optional.
 
+**SEE EXAMPLE SECTION FOR USES**
+
 **USING IMPORTS:**
 - `[org.clojars.roklenarcic.datalevin-pathom :as dtlv-p3]`
 - `[org.clojars.roklenarcic.datalevin-pathom.options :as o]`
 - `[org.clojars.roklenarcic.datalevin-pathom.schema :as sch]`
+- `[org.clojars.roklenarcic.datalevin-pathom.query :as q]`
+- `[org.clojars.roklenarcic.datalevin-pathom.resolver :as res]`
 
 # Attributes
 
@@ -93,6 +97,18 @@ one for each `schema`. It is up to you how to enter this into the env, use the k
 {o/connections {:test test-db/*conn*}}
 ```
 
+# Env middleware
+
+Instead of constructing the Pathom env map yourself you can use `dtlv-p3/wrap-env` function
+to create or update a pathom env.
+
+```clojure
+(dtlv-p3/wrap-env datalevin-connections
+  [(limit-by-owner-plugin all-attributes)])
+```
+
+It uses connections and plugins. We'll mention plugins later.
+
 # Dynamic resolver
 
 Given attributes and schema name, a dynamic resolver can be created for you with sub-resolvers that will run queries on
@@ -159,20 +175,28 @@ When using `o/query-fn` the subresolver for main dynamic resolver will look like
 
 You can change this by supplying `o/resolver-input` and/or `o/resolver-output` on your attribute.
 
-### Attributes and CLJC context
+# Plugins (and custom queries)
 
-When using Fulcro RAD or in some other context you will be putting attributes in a CLJC file to share them frontend/backend
-for various reasons. Generally the attribute namespace is required by a lot of other namespace and you don't want
-to put your query-fn logic into CLJC namespaces.
+There is another, potentially more flexible, solution for implementing custom queries.
 
-You can easily avoid these issues by only adding `o/query-fn` or `o/resolver-output` to the attribute just
-before they are passed into `dtlv-p3/automatic-resolvers` function. Use helper function to achieve that:
+There are two **OPTIONAL** keys in Pathom env that override resolve and query generating fn used for dynamic resolver.
 
-```
-(dtlv-p3/add-to-attributes a/attributes {:person/over-18-old {o/query-fn ....}})
-```
+- `q/query-fn`
+- `res/resolve-fn`
 
-It will merge supplied maps into their respective attributes.
+These default to:
+
+- `q/generate-attr-query`, which is also a multimethod
+- `res/resolve-attr-pull`
+
+Especially the query one is interesting as you can override queries generated for a particular attribute.
+
+When using `wrap-env` env middleware you can specify a coll of plugins, which will wrap these default methods,
+and so they lend very well to adding limitations.
+
+There's two plugin types, one for each function, `q/plugin` and`res/plugin`, see docs for function
+argument lists.
+
 
 # Fulcro RAD Form support
 
@@ -180,7 +204,7 @@ It will merge supplied maps into their respective attributes.
 
 Require `[org.clojars.roklenarcic.datalevin-pathom.fulcro-middleware :as fm]`.
 
-Library provides save and delete middleware for form mutations. They expect presence of 
+Library provides save and delete middleware for form mutations. They expect presence of
 `::attr/key->attribute` in env, use `attr/wrap-env` to provide that. Here is an example of configuration that works:
 
 Requires:
@@ -213,6 +237,152 @@ Here's the Pathom 3 setup:
 Of course additional things will be needed, this is just a very basic one.
 
 ```
+
+# Examples
+
+Useful examples implementing common needs in application.
+
+Imagine some entities have attribute `::m.user/owner` and we want limit some lookups (list and also by ident)
+to only show those where owner is the current user. First we write a function that will modify a query
+to restrain by user:
+
+```clojure
+(defn limit-by-owner [query env]
+  (if-let [user-id (-> env :ring/request :session ::m.user/id)]
+    (q/add-to-query query
+                    {'?logged-in-user user-id}
+                    '[?e ::m.user/owner ?owner]
+                    '[?owner ::m.user/id ?logged-in-user])
+    (throw (ex-info "A logged in user is required" {:reauth? true}))))
+```
+
+We see `add-to-query` function used, which adds pairs of var + var values to the query inputs
+and adds where conditions. The expected input `query` is the `q/->query` structure.
+
+We can now add a query for a list of all the tags user has like so:
+
+```clojure
+(defmethod q/generate-attr-query ::m.tags/all-tags
+  [env db attr pattern node-resolver-input]
+  (-> '[:find [(pull ?e pattern) ...]
+        :in $ pattern
+        :where [?e ::m.tags/tag _]]
+      (q/->query [db pattern])
+      (c/limit-by-owner env)))
+```
+
+We override `q/generate-attr-query` for attribute `::m.tags/all-tags`. This attribute needs to be in the list of all attributes
+passed to the `automatic-resolvers` function. We also restrained to owned tags below. To recap:
+
+- we implemented a list query
+- we limited the results with a reusable function (instead of making it part of the initial query)
+
+We use plugins to generically limit query results to owners like so
+
+```clojure
+(defn limit-by-owner-plugin
+  [attributes]
+  (let [affected-idents (->> attributes
+                             (keep #(when (and (o/identity? %) (:com.fulcrologic.rad.attributes-options/owned-only %))
+                                      (o/qualified-key %)))
+                             set)]
+    (q/plugin
+      (fn outer [handler]
+        (fn inner [env db attr pattern node-resolver-input]
+          (cond-> (handler env db attr pattern node-resolver-input)
+            (affected-idents (o/qualified-key attr))
+            (limit-by-owner env)))))))
+```
+This plugin is passed to `wrap-env` when creating the parser. We chose `:com.fulcrologic.rad.attributes-options/owned-only`
+ourselves, it has no special meaning otherwise. It is a marker on attributes so the plugin knows which attribute queries to 
+wrap.
+
+So imagine this attribute definition:
+
+```clojure
+(defattr id ::id :long
+  {ao/identity? true
+   dpo/native-id? true
+   ::ao/owned-only true
+   ao/schema :main})
+```
+
+Queries by ident for tags will be limited to owned tags only.
+
+If you are using Fulcro form middleware for save/delete, then you'll probably want
+to:
+
+- add some data to each entity as it is saved (e.g. created-at, updated-at)
+- add the owner user based on session rather than trust the incoming data
+- reject writes to entity that is owned by another user
+
+Here's an example of augmenting the Fulcro middleware with these features:
+
+```clojure
+(defn new-entity? [ident] (tempid/tempid? (second ident)))
+
+(defn owner-info [env ident]
+  (let [attr (get-in env [::attr/key->attribute (first ident)])]
+    (when (::ao/owned-only attr)
+      {::user (session/from-env env ::m.user/id)
+       ::owner (when-not (new-entity? ident)
+                 (common/get-owner env ident))})))
+
+(defn rewrite-owner-limited-ident
+  [env ident value]
+  (if-let [{::keys [user owner]} (owner-info env ident)]
+    (cond
+      (= nil owner user)
+      (throw (ex-info (str "Cannot save " ident " without a user in the session") {}))
+      (not= user owner)
+      (throw (ex-info (str "Cannot move " ident " to a another owner.") {}))
+      :else
+      value)
+    value))
+
+(defn add-created-at
+  [env ident value]
+  (assoc value ::attributes/created-at {:after (Date.)}))
+
+(defmethod r.s.middleware/rewrite-value ::ident
+  [env ident value]
+  (let [attr (get-in env [::attr/key->attribute (first ident)])
+        has-owner? (::ao/owned-only attr)]
+    (cond->> value
+      has-owner? (rewrite-owner-limited-ident env ident)
+      (new-entity? ident) (add-created-at env ident))))
+
+(defn save-middleware [attrs]
+  (doseq [a attrs
+          :when (ao/identity? a)]
+    (derive (ao/qualified-key a) ::ident))
+  (-> fm/save-middleware
+      (blob/wrap-persist-images attrs)
+      ;; This is where you would add things like form save security/schema validation/etc.
+
+      ;; This middleware lets you morph values on form save
+      (r.s.middleware/wrap-rewrite-values)))
+
+(defn wrap-validate-delete-owner!
+  [handler]
+  (fn [{::form/keys [params] :as env}]
+    (if-let [{::keys [user owner]} (owner-info env (first params))]
+      (if (= user owner)
+        (handler env)
+        (throw (ex-info (str "Cannot delete entity owned by another user.") {})))
+      (handler env))))
+
+(def delete-middleware
+  (-> fm/delete-middleware
+      wrap-validate-delete-owner!))
+```
+
+The `owner-info` function provides us information about the owner of an entity and also the current user in the session.
+
+The function returns nil when the attribute has no owner restrictions. We then use `wrap-rewrite-values` to insert user data
+and created at into the incoming delta where appropriate.
+
+The delete middleware is wrapped with a check if the owner and logged in user are one and the same.
 
 ## Other
 
