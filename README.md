@@ -1,6 +1,6 @@
 # Datalevin Pathom 3 Integration
 
-![Clojars Project](https://img.shields.io/clojars/v/org.clojars.roklenarcic/datalevin-pathom.svg)
+[![Clojars Project](https://img.shields.io/clojars/v/org.clojars.roklenarcic/datalevin-pathom.svg)](https://clojars.org/org.clojars.roklenarcic/datalevin-pathom)
 
 Provides tools to integrate Datalevin with Pathom 3 and optionally Fulcro RAD.
 
